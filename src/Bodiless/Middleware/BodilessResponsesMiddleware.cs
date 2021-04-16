@@ -9,13 +9,15 @@ namespace Bodiless.Middleware
         private readonly BodilessOptions _options;
         private readonly RequestDelegate _next;
 
-        public BodilessResponsesMiddleware(BodilessOptions options = null)
-        {
-            _options = options ?? new BodilessOptions { RequiredHeader = "Discard-Body", RequiredValue = "true" };
-        }
-
         public BodilessResponsesMiddleware(RequestDelegate next)
         {
+            _options = new BodilessOptions { RequiredHeader = "Discard-Body", RequiredValue = "true" };
+            _next = next;
+        }
+
+        public BodilessResponsesMiddleware(RequestDelegate next, BodilessOptions options = null)
+        {
+            _options = options;
             _next = next;
         }
 
