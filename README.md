@@ -38,9 +38,12 @@ app.UseBodilessResponses(new BodilessOptions
 
 If no `RequiredValue` is defined the response body will be discarded based on the presence of the `RequiredHeader`.
 
+When this is in place you simply add the header and value when making your request, e.g. in your scripts for K6, Locust, or other load testing tool of choice.
+Regular clients, not using this header, will not notice any difference.
+
 ### Combining Bodiless with response compression
 Given that you need this, it seems very likely that you should already be using response compression.
-When combining this middleware with dkbajl it is important that the response compression is configured before Bodiless:
+When combining these middlewares it is important that the response compression is configured before Bodiless:
 
 ```
 app.UseResponseCompression();
@@ -52,4 +55,4 @@ app.UseBodilessResponses();
 The overhead of this middleware is hardly noticable, and it can be very convenient to have it permanently installed.
 I recommend defining your own custom header, making malicious use less likely.
 
-Any malicious user can only remove responses for own rquests, but in the same way that this let's you put a lot of load on your API from a single computer, it can let malicious users do the same. If you are worried this might happen you can either feature toggle the middleware, or simply add it temporary while testing, and then remove it after.
+Any malicious user can only remove responses for their own rquests, but in the same way that this let's you put a lot of load on your API from a single computer, it can let malicious users do the same. If you are worried this might happen you can either feature toggle the middleware, or simply add it temporary while testing, and then remove it after use.
