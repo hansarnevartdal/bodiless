@@ -1,6 +1,8 @@
 # Bodiless
 Bodiless is a small aspnetcore middleware that will let you conditionally discard the body of your responses based on your request headers.
 
+[![Bodiless](https://img.shields.io/nuget/v/Bodiless.svg)](https://www.nuget.org/packages/Bodiless/) 
+
 ## Why would I use Bodiless?
 **TLDR;** Poor man's load testing with a single computer on a limited network.
 
