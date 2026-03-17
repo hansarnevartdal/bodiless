@@ -11,7 +11,7 @@ namespace Bodiless.Tests;
 
 public sealed class BodilessTestFixture(Action<BodilessTestFixture> configure) : IAsyncDisposable
 {
-    private readonly Action<BodilessTestFixture> configure = configure ?? throw new ArgumentNullException(nameof(configure));
+    private readonly Action<BodilessTestFixture> configureFixture = configure ?? throw new ArgumentNullException(nameof(configure));
     private HttpClient? client;
     private string? header;
     private IHost? host;
@@ -46,7 +46,7 @@ public sealed class BodilessTestFixture(Action<BodilessTestFixture> configure) :
             return client;
         }
 
-        configure(this);
+        configureFixture(this);
 
         host = await new HostBuilder()
             .ConfigureWebHost(webBuilder =>

@@ -6,8 +6,8 @@ namespace Bodiless.Middleware;
 
 public sealed class BodilessResponsesMiddleware(RequestDelegate next, BodilessOptions? options = null)
 {
-    private readonly RequestDelegate next = next ?? throw new ArgumentNullException(nameof(next));
-    private readonly BodilessOptions options = options ?? new();
+    private readonly RequestDelegate nextDelegate = next ?? throw new ArgumentNullException(nameof(next));
+    private readonly BodilessOptions bodilessOptions = options ?? new();
 
     public async Task Invoke(HttpContext context)
     {
@@ -15,7 +15,7 @@ public sealed class BodilessResponsesMiddleware(RequestDelegate next, BodilessOp
 
         if (!ShouldDiscardBody(context))
         {
-            await next(context);
+            await nextDelegate(context);
             return;
         }
 
@@ -30,7 +30,7 @@ public sealed class BodilessResponsesMiddleware(RequestDelegate next, BodilessOp
 
         try
         {
-            await next(context);
+            await nextDelegate(context);
         }
         finally
         {
@@ -40,19 +40,19 @@ public sealed class BodilessResponsesMiddleware(RequestDelegate next, BodilessOp
 
     private bool ShouldDiscardBody(HttpContext context)
     {
-        if (!context.Request.Headers.TryGetValue(options.RequiredHeader, out var values))
+        if (!context.Request.Headers.TryGetValue(bodilessOptions.RequiredHeader, out var values))
         {
             return false;
         }
 
-        return options.RequiredValue is null || HasRequiredValue(values);
+        return bodilessOptions.RequiredValue is null || HasRequiredValue(values);
     }
 
     private bool HasRequiredValue(StringValues values)
     {
         foreach (var value in values)
         {
-            if (string.Equals(value, options.RequiredValue, StringComparison.Ordinal))
+            if (string.Equals(value, bodilessOptions.RequiredValue, StringComparison.Ordinal))
             {
                 return true;
             }
