@@ -1,45 +1,63 @@
-﻿using System.Threading.Tasks;
-using Bodiless.Infrastructure;
+﻿using Bodiless.Infrastructure;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Primitives;
 
-namespace Bodiless.Middleware
+namespace Bodiless.Middleware;
+
+public sealed class BodilessResponsesMiddleware(RequestDelegate next, BodilessOptions? options = null)
 {
-    public class BodilessResponsesMiddleware
+    private readonly RequestDelegate nextDelegate = next ?? throw new ArgumentNullException(nameof(next));
+    private readonly BodilessOptions bodilessOptions = options ?? new();
+
+    public async Task Invoke(HttpContext context)
     {
-        private readonly BodilessOptions _options;
-        private readonly RequestDelegate _next;
+        ArgumentNullException.ThrowIfNull(context);
 
-        public BodilessResponsesMiddleware(RequestDelegate next)
+        if (!ShouldDiscardBody(context))
         {
-            _options = new BodilessOptions { RequiredHeader = "Discard-Body", RequiredValue = "true" };
-            _next = next;
+            await nextDelegate(context);
+            return;
         }
 
-        public BodilessResponsesMiddleware(RequestDelegate next, BodilessOptions options = null)
+        var originalBody = context.Response.Body;
+        await using var bodilessBody = new VoidStream(originalBody);
+        context.Response.OnStarting(static state =>
         {
-            _options = options;
-            _next = next;
+            ((HttpResponse)state).ContentLength = 0;
+            return Task.CompletedTask;
+        }, context.Response);
+        context.Response.Body = bodilessBody;
+
+        try
+        {
+            await nextDelegate(context);
+        }
+        finally
+        {
+            context.Response.Body = originalBody;
+        }
+    }
+
+    private bool ShouldDiscardBody(HttpContext context)
+    {
+        if (!context.Request.Headers.TryGetValue(bodilessOptions.RequiredHeader, out var values))
+        {
+            return false;
         }
 
-        public async Task Invoke(HttpContext context)
+        return bodilessOptions.RequiredValue is null || HasRequiredValue(values);
+    }
+
+    private bool HasRequiredValue(StringValues values)
+    {
+        foreach (var value in values)
         {
-            if (RequiredHeaderExists(context) && HeaderHasRequiredValue(context))
+            if (string.Equals(value, bodilessOptions.RequiredValue, StringComparison.Ordinal))
             {
-                await using var voidResponse = new VoidStream(context.Response.Body);
-                context.Response.Body = voidResponse;
+                return true;
             }
-
-            await _next(context);
         }
 
-        private bool RequiredHeaderExists(HttpContext context)
-        {
-            return context.Request.Headers.ContainsKey(_options.RequiredHeader);
-        }
-
-        private bool HeaderHasRequiredValue(HttpContext context)
-        {
-            return _options.RequiredValue == null || context.Request.Headers[_options.RequiredHeader] == _options.RequiredValue;
-        }
+        return false;
     }
 }
