@@ -21,14 +21,20 @@ Assuming that you are not interested in testing your network infrastructure, but
 As this is middleware there is no need to change any of your API endpoints in any way. It simply works for all of your HTTP GET requests.
 
 ## How do I use Bodiless?
-Add Bodiless as early as possible in your `Startup.cs` Configure-method:
+Add Bodiless as early as possible in your ASP.NET Core pipeline configuration:
 
-```
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
 app.UseBodilessResponses();
 ```
 
 Or with options defining the header you want to use, and optionally the value of this header:
-```
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
 app.UseBodilessResponses(new BodilessOptions
 {
     RequiredHeader = "Discard-Body", 
@@ -45,14 +51,14 @@ Regular clients, not using this header, will not notice any difference.
 Given that you need this, it seems very likely that you should already be using response compression.
 When combining these middlewares it is important that the response compression is configured before Bodiless:
 
-```
+```csharp
 app.UseResponseCompression();
 app.UseBodilessResponses();
 ...
 ```
 
 ## Can I leave Bodiless installed?
-The overhead of this middleware is hardly noticable, and it can be very convenient to have it permanently installed.
+The overhead of this middleware is hardly noticeable, and it can be very convenient to have it permanently installed.
 I recommend defining your own custom header, making malicious use less likely.
 
-Any malicious user can only remove responses for their own rquests, but in the same way that this let's you put a lot of load on your API from a single computer, it can let malicious users do the same. If you are worried this might happen you can either feature toggle the middleware, or simply add it temporary while testing, and then remove it after use.
+Any malicious user can only remove responses for their own requests, but in the same way that this lets you put a lot of load on your API from a single computer, it can let malicious users do the same. If you are worried this might happen you can either feature toggle the middleware, or simply add it temporarily while testing, and then remove it after use.

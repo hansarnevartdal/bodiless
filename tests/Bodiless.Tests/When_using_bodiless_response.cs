@@ -1,84 +1,86 @@
 using System.Net;
-using System.Threading.Tasks;
 using Bodiless.Middleware;
-using FluentAssertions;
 using Xunit;
 
-namespace Bodiless.Tests
+namespace Bodiless.Tests;
+
+public class When_using_bodiless_response
 {
-    public class When_using_bodiless_response
+    [Theory]
+    [InlineData("header", "value", "header", "value", "")]
+    [InlineData("header", "value", "header", "otherValue", "body")]
+    [InlineData("header", "value", "header", null, "body")]
+    [InlineData(null, null, "Discard-Body", null, "body")]
+    [InlineData(null, null, "Discard-Body", "true", "")]
+    [InlineData(null, null, "header", "value", "body")]
+    public async Task Should_discard_body_when_the_required_header_matches(
+        string? requiredHeader,
+        string? requiredValue,
+        string actualHeader,
+        string? actualValue,
+        string expectedBody)
     {
-        [Theory]
-        [InlineData("header", "value", "header", "value", "")]
-        [InlineData("header", "value", "header", "otherValue", "body")]
-        [InlineData("header", "value", "header", null, "body")]
-        [InlineData(null, null, "Discard-Body", null, "body")]
-        [InlineData(null, null, "Discard-Body", "true", "")]
-        [InlineData(null, null, "header", "value", "body")]
-        public async Task Given_required_header_and_value_Should_discard_body(
-            string requiredHeader,
-            string requiredValue,
-            string actualHeader,
-            string actualValue,
-            string expectedBody)
+        await using var fixture = new BodilessTestFixture(conditions =>
         {
-            var fixture = new BodilessTestFixture(conditions =>
+            if (requiredHeader is not null)
             {
-                if (requiredHeader != null)
+                conditions.GivenBodilessOptions(new BodilessOptions
                 {
-                    conditions.GivenBodilessOptions(new BodilessOptions
-                    {
-                        RequiredHeader = requiredHeader,
-                        RequiredValue = requiredValue
-                    });
-                }
+                    RequiredHeader = requiredHeader,
+                    RequiredValue = requiredValue
+                });
+            }
 
-                conditions.GivenHttpRequestHeaders(actualHeader, actualValue);
-            });
-            
-            var client = await fixture.GetTestClient().ConfigureAwait(false);
-            var response = await client.GetAsync("echo/body").ConfigureAwait(false);
+            conditions.GivenHttpRequestHeaders(actualHeader, actualValue);
+        });
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-            content.Should().Be(expectedBody);
-        }
+        var client = await fixture.GetTestClient();
+        var response = await client.GetAsync("echo/body");
 
-        [Theory]
-        [InlineData("header", "value", "header", "value", "")]
-        [InlineData("header", "value", "header", "otherValue", "body")]
-        [InlineData("header", "value", "header", null, "body")]
-        [InlineData(null, null, "Discard-Body", null, "body")]
-        [InlineData(null, null, "Discard-Body", "true", "")]
-        [InlineData(null, null, "header", "value", "body")]
-        public async Task Given_required_header_and_value_With_response_compression_Should_discard_body(
-            string requiredHeader,
-            string requiredValue,
-            string actualHeader,
-            string actualValue,
-            string expectedBody)
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var content = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(expectedBody, content);
+    }
+
+    [Theory]
+    [InlineData("header", "value", "header", "value", "")]
+    [InlineData("header", "value", "header", "otherValue", "body")]
+    [InlineData("header", "value", "header", null, "body")]
+    [InlineData(null, null, "Discard-Body", null, "body")]
+    [InlineData(null, null, "Discard-Body", "true", "")]
+    [InlineData(null, null, "header", "value", "body")]
+    public async Task Should_discard_body_when_response_compression_runs_before_bodiless(
+        string? requiredHeader,
+        string? requiredValue,
+        string actualHeader,
+        string? actualValue,
+        string expectedBody)
+    {
+        await using var fixture = new BodilessTestFixture(conditions =>
         {
-            var fixture = new BodilessTestFixture(conditions =>
+            conditions.GivenResponseCompression();
+
+            if (requiredHeader is not null)
             {
-                if (requiredHeader != null)
+                conditions.GivenBodilessOptions(new BodilessOptions
                 {
-                    conditions.GivenResponseCompression();
-                    conditions.GivenBodilessOptions(new BodilessOptions
-                    {
-                        RequiredHeader = requiredHeader,
-                        RequiredValue = requiredValue
-                    });
-                }
+                    RequiredHeader = requiredHeader,
+                    RequiredValue = requiredValue
+                });
+            }
 
-                conditions.GivenHttpRequestHeaders(actualHeader, actualValue);
-            });
+            conditions.GivenHttpRequestHeaders(actualHeader, actualValue);
+        });
 
-            var client = await fixture.GetTestClient().ConfigureAwait(false);
-            var response = await client.GetAsync("echo/body").ConfigureAwait(false);
+        var client = await fixture.GetTestClient();
+        var response = await client.GetAsync("echo/body");
 
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-            content.Should().Be(expectedBody);
-        }
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var content = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(expectedBody, content);
     }
 }
