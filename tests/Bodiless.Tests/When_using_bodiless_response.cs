@@ -162,18 +162,18 @@ public class When_using_bodiless_response
         Assert.Equal(expectedValues, actualValues);
     }
 
-    private static Task<HttpResponseMessage> SendGetRequest(
+    private static async Task<HttpResponseMessage> SendGetRequest(
         HttpClient client,
         string requestUri,
         params (string HeaderName, IEnumerable<string> Values)[] headers)
     {
-        var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
 
         foreach (var (headerName, values) in headers)
         {
             request.Headers.Add(headerName, values);
         }
 
-        return client.SendAsync(request);
+        return await client.SendAsync(request);
     }
 }
