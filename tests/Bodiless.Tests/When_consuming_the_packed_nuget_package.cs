@@ -83,7 +83,7 @@ internal sealed class PackagedBodilessApplication : IAsyncDisposable
     {
         var repositoryRoot = FindRepositoryRoot();
         var bodilessProjectPath = Path.Combine(repositoryRoot, "src", "Bodiless", "Bodiless.csproj");
-        var prepackedPackagePath = Environment.GetEnvironmentVariable(PrepackedPackagePathEnvironmentVariable);
+        var prepackedPackagePath = Environment.GetEnvironmentVariable(PrepackedPackagePathEnvironmentVariable)?.Trim();
         var workspaceDirectory = Path.Combine(Path.GetTempPath(), $"bodiless-smoke-{Guid.NewGuid():N}");
         var localFeedDirectory = Path.Combine(workspaceDirectory, "feed");
         var packagesDirectory = Path.Combine(workspaceDirectory, "packages");
@@ -122,6 +122,14 @@ internal sealed class PackagedBodilessApplication : IAsyncDisposable
             else
             {
                 var prepackedPackageFullPath = Path.GetFullPath(prepackedPackagePath);
+                var prepackedPackageFileName = Path.GetFileName(prepackedPackageFullPath);
+                var expectedPackageFileName = $"{packageIdentity.Id}.{packageIdentity.Version}.nupkg";
+
+                if (!string.Equals(Path.GetExtension(prepackedPackageFullPath), ".nupkg", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        $"The prepacked Bodiless package specified by '{PrepackedPackagePathEnvironmentVariable}' must point to a .nupkg file.");
+                }
 
                 if (!File.Exists(prepackedPackageFullPath))
                 {
@@ -130,9 +138,15 @@ internal sealed class PackagedBodilessApplication : IAsyncDisposable
                         prepackedPackageFullPath);
                 }
 
+                if (!string.Equals(prepackedPackageFileName, expectedPackageFileName, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        $"The prepacked Bodiless package specified by '{PrepackedPackagePathEnvironmentVariable}' must be '{expectedPackageFileName}'.");
+                }
+
                 File.Copy(
                     prepackedPackageFullPath,
-                    Path.Combine(localFeedDirectory, Path.GetFileName(prepackedPackageFullPath)),
+                    Path.Combine(localFeedDirectory, prepackedPackageFileName),
                     overwrite: true);
             }
 
