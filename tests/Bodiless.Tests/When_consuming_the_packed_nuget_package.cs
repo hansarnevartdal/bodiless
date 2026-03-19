@@ -18,7 +18,7 @@ public class When_consuming_the_packed_nuget_package
             BaseAddress = application.BaseAddress
         };
 
-        var regularResponse = await client.GetAsync("echo/body");
+        using var regularResponse = await client.GetAsync("echo/body");
         var regularBody = await regularResponse.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, regularResponse.StatusCode);
@@ -27,7 +27,7 @@ public class When_consuming_the_packed_nuget_package
         using var bodilessRequest = new HttpRequestMessage(HttpMethod.Get, "echo/body");
         bodilessRequest.Headers.Add("Discard-Body", "true");
 
-        var bodilessResponse = await client.SendAsync(bodilessRequest);
+        using var bodilessResponse = await client.SendAsync(bodilessRequest);
         var bodilessBody = await bodilessResponse.Content.ReadAsStringAsync();
 
         Assert.Equal(HttpStatusCode.OK, bodilessResponse.StatusCode);
@@ -40,6 +40,7 @@ internal sealed class PackagedBodilessApplication : IAsyncDisposable
 {
     private const string ApplicationFileName = "SmokeTestApp.csproj";
     private const string PackageIdElementName = "PackageId";
+    private const int StartupAttemptCount = 5;
     private const string VersionElementName = "Version";
     private readonly Task<string> errorOutput;
     private readonly Task<string> standardOutput;
@@ -60,6 +61,25 @@ internal sealed class PackagedBodilessApplication : IAsyncDisposable
 
     public static async Task<PackagedBodilessApplication> Create()
     {
+        AddressInUseException? lastAddressInUseException = null;
+
+        for (var attempt = 0; attempt < StartupAttemptCount; attempt++)
+        {
+            try
+            {
+                return await CreateOnce();
+            }
+            catch (AddressInUseException exception) when (attempt < StartupAttemptCount - 1)
+            {
+                lastAddressInUseException = exception;
+            }
+        }
+
+        throw new InvalidOperationException("Failed to start the packaged smoke test application after retrying address allocation.", lastAddressInUseException);
+    }
+
+    private static async Task<PackagedBodilessApplication> CreateOnce()
+    {
         var repositoryRoot = FindRepositoryRoot();
         var bodilessProjectPath = Path.Combine(repositoryRoot, "src", "Bodiless", "Bodiless.csproj");
         var workspaceDirectory = Path.Combine(Path.GetTempPath(), $"bodiless-smoke-{Guid.NewGuid():N}");
@@ -67,131 +87,146 @@ internal sealed class PackagedBodilessApplication : IAsyncDisposable
         var packagesDirectory = Path.Combine(workspaceDirectory, "packages");
         var applicationDirectory = Path.Combine(workspaceDirectory, "app");
         var packageIdentity = ReadPackageIdentity(bodilessProjectPath);
+        Process? process = null;
+        Task<string>? standardOutput = null;
+        Task<string>? errorOutput = null;
 
-        Directory.CreateDirectory(localFeedDirectory);
-        Directory.CreateDirectory(packagesDirectory);
-        Directory.CreateDirectory(applicationDirectory);
-
-        var environmentVariables = new Dictionary<string, string>(StringComparer.Ordinal)
+        try
         {
-            ["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1",
-            ["DOTNET_NOLOGO"] = "1",
-            ["DOTNET_SKIP_FIRST_TIME_EXPERIENCE"] = "1",
-            ["NUGET_PACKAGES"] = packagesDirectory
-        };
+            Directory.CreateDirectory(localFeedDirectory);
+            Directory.CreateDirectory(packagesDirectory);
+            Directory.CreateDirectory(applicationDirectory);
 
-        await RunDotnet(
-            repositoryRoot,
-            environmentVariables,
-            "pack",
-            bodilessProjectPath,
-            "--configuration",
-            "Release",
-            "--output",
-            localFeedDirectory);
+            var environmentVariables = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["DOTNET_CLI_TELEMETRY_OPTOUT"] = "1",
+                ["DOTNET_NOLOGO"] = "1",
+                ["DOTNET_SKIP_FIRST_TIME_EXPERIENCE"] = "1",
+                ["NUGET_PACKAGES"] = packagesDirectory
+            };
 
-        await File.WriteAllTextAsync(
-            Path.Combine(applicationDirectory, ApplicationFileName),
-            $$"""
-            <Project Sdk="Microsoft.NET.Sdk.Web">
-              <PropertyGroup>
-                <TargetFramework>net10.0</TargetFramework>
-                <ImplicitUsings>enable</ImplicitUsings>
-                <Nullable>enable</Nullable>
-              </PropertyGroup>
+            await RunDotnet(
+                repositoryRoot,
+                environmentVariables,
+                "pack",
+                bodilessProjectPath,
+                "--configuration",
+                "Release",
+                "--output",
+                localFeedDirectory);
 
-              <ItemGroup>
-                <PackageReference Include="{{packageIdentity.Id}}" Version="{{packageIdentity.Version}}" />
-              </ItemGroup>
-            </Project>
-            """);
+            await File.WriteAllTextAsync(
+                Path.Combine(applicationDirectory, ApplicationFileName),
+                $$"""
+                <Project Sdk="Microsoft.NET.Sdk.Web">
+                  <PropertyGroup>
+                    <TargetFramework>net10.0</TargetFramework>
+                    <ImplicitUsings>enable</ImplicitUsings>
+                    <Nullable>enable</Nullable>
+                  </PropertyGroup>
 
-        await File.WriteAllTextAsync(
-            Path.Combine(applicationDirectory, "Program.cs"),
-            """
-            using Bodiless.Extensions;
+                  <ItemGroup>
+                    <PackageReference Include="{{packageIdentity.Id}}" Version="{{packageIdentity.Version}}" />
+                  </ItemGroup>
+                </Project>
+                """);
 
-            var builder = WebApplication.CreateBuilder(args);
-            var app = builder.Build();
+            await File.WriteAllTextAsync(
+                Path.Combine(applicationDirectory, "Program.cs"),
+                """
+                using Bodiless.Extensions;
 
-            app.UseBodilessResponses();
-            app.MapGet("/echo/{text}", (string text) => Results.Text(text));
+                var builder = WebApplication.CreateBuilder(args);
+                var app = builder.Build();
 
-            app.Run();
-            """);
+                app.UseBodilessResponses();
+                app.MapGet("/echo/{text}", (string text) => Results.Text(text));
 
-        var nugetConfiguration = new XDocument(
-            new XElement(
-                "configuration",
+                app.Run();
+                """);
+
+            var nugetConfiguration = new XDocument(
                 new XElement(
-                    "packageSources",
-                    new XElement("clear"),
+                    "configuration",
                     new XElement(
-                        "add",
-                        new XAttribute("key", "local"),
-                        new XAttribute("value", localFeedDirectory)))));
+                        "packageSources",
+                        new XElement("clear"),
+                        new XElement(
+                            "add",
+                            new XAttribute("key", "local"),
+                            new XAttribute("value", localFeedDirectory)))));
 
-        await File.WriteAllTextAsync(Path.Combine(applicationDirectory, "NuGet.Config"), nugetConfiguration.ToString());
+            await File.WriteAllTextAsync(Path.Combine(applicationDirectory, "NuGet.Config"), nugetConfiguration.ToString());
 
-        await RunDotnet(
-            applicationDirectory,
-            environmentVariables,
-            "restore",
-            ApplicationFileName,
-            "--configfile",
-            Path.Combine(applicationDirectory, "NuGet.Config"));
+            await RunDotnet(
+                applicationDirectory,
+                environmentVariables,
+                "restore",
+                ApplicationFileName,
+                "--configfile",
+                Path.Combine(applicationDirectory, "NuGet.Config"));
 
-        await RunDotnet(
-            applicationDirectory,
-            environmentVariables,
-            "build",
-            ApplicationFileName,
-            "--no-restore");
+            await RunDotnet(
+                applicationDirectory,
+                environmentVariables,
+                "build",
+                ApplicationFileName,
+                "--no-restore");
 
-        var port = ReservePort();
-        var baseAddress = new Uri($"http://127.0.0.1:{port}/", UriKind.Absolute);
-        var startInfo = new ProcessStartInfo("dotnet")
-        {
-            RedirectStandardError = true,
-            RedirectStandardOutput = true,
-            UseShellExecute = false,
-            WorkingDirectory = applicationDirectory
-        };
+            var port = ReservePort();
+            var baseAddress = new Uri($"http://127.0.0.1:{port}/", UriKind.Absolute);
+            var startInfo = new ProcessStartInfo("dotnet")
+            {
+                RedirectStandardError = true,
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                WorkingDirectory = applicationDirectory
+            };
 
-        foreach (var argument in new[] { "run", "--project", ApplicationFileName, "--no-build", "--urls", baseAddress.ToString() })
-        {
-            startInfo.ArgumentList.Add(argument);
+            foreach (var argument in new[] { "run", "--project", ApplicationFileName, "--no-build", "--urls", baseAddress.ToString() })
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
+            foreach (var (key, value) in environmentVariables)
+            {
+                startInfo.Environment[key] = value;
+            }
+
+            process = Process.Start(startInfo) ?? throw new InvalidOperationException("Failed to start the packaged smoke test application.");
+            standardOutput = process.StandardOutput.ReadToEndAsync();
+            errorOutput = process.StandardError.ReadToEndAsync();
+            var application = new PackagedBodilessApplication(baseAddress, process, standardOutput, errorOutput, workspaceDirectory);
+
+            await application.WaitUntilReady();
+
+            return application;
         }
-
-        foreach (var (key, value) in environmentVariables)
+        catch (Exception exception)
         {
-            startInfo.Environment[key] = value;
+            if (process is not null)
+            {
+                await StopProcessAsync(process);
+                process.Dispose();
+            }
+
+            await DeleteWorkspaceDirectory(workspaceDirectory);
+
+            if (standardOutput is not null && errorOutput is not null && await HasAddressInUseFailure(standardOutput, errorOutput))
+            {
+                throw new AddressInUseException("Failed to start the packaged smoke test application because the selected port was taken before the child process bound it.", exception);
+            }
+
+            throw;
         }
-
-        var process = Process.Start(startInfo) ?? throw new InvalidOperationException("Failed to start the packaged smoke test application.");
-        var standardOutput = process.StandardOutput.ReadToEndAsync();
-        var errorOutput = process.StandardError.ReadToEndAsync();
-        var application = new PackagedBodilessApplication(baseAddress, process, standardOutput, errorOutput, workspaceDirectory);
-
-        await application.WaitUntilReady();
-
-        return application;
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (!process.HasExited)
-        {
-            process.Kill(entireProcessTree: true);
-        }
-
-        await process.WaitForExitAsync();
+        await StopProcessAsync(process);
         process.Dispose();
 
-        if (Directory.Exists(workspaceDirectory))
-        {
-            await DeleteWorkspaceDirectory();
-        }
+        await DeleteWorkspaceDirectory(workspaceDirectory);
     }
 
     private static string FindRepositoryRoot()
@@ -276,8 +311,13 @@ internal sealed class PackagedBodilessApplication : IAsyncDisposable
         return ((IPEndPoint)listener.LocalEndpoint).Port;
     }
 
-    private async Task DeleteWorkspaceDirectory()
+    private static async Task DeleteWorkspaceDirectory(string workspaceDirectory)
     {
+        if (!Directory.Exists(workspaceDirectory))
+        {
+            return;
+        }
+
         Exception? lastException = null;
 
         for (var attempt = 0; attempt < 20; attempt++)
@@ -302,6 +342,31 @@ internal sealed class PackagedBodilessApplication : IAsyncDisposable
         throw new InvalidOperationException($"Failed to clean up packaged smoke test workspace '{workspaceDirectory}'.", lastException);
     }
 
+    private static async Task<bool> HasAddressInUseFailure(Task<string> standardOutput, Task<string> errorOutput)
+    {
+        var combinedOutput = $"{await standardOutput}\n{await errorOutput}";
+
+        return combinedOutput.Contains("address already in use", StringComparison.OrdinalIgnoreCase)
+            || combinedOutput.Contains("only one usage of each socket address", StringComparison.OrdinalIgnoreCase)
+            || combinedOutput.Contains("failed to bind to address", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static async Task StopProcessAsync(Process process)
+    {
+        if (!process.HasExited)
+        {
+            try
+            {
+                process.Kill(entireProcessTree: true);
+            }
+            catch (InvalidOperationException) when (process.HasExited)
+            {
+            }
+        }
+
+        await process.WaitForExitAsync();
+    }
+
     private async Task WaitUntilReady()
     {
         using var client = new HttpClient
@@ -318,7 +383,7 @@ internal sealed class PackagedBodilessApplication : IAsyncDisposable
 
             try
             {
-                var response = await client.GetAsync("echo/ready");
+                using var response = await client.GetAsync("echo/ready", HttpCompletionOption.ResponseHeadersRead);
 
                 if (response.StatusCode == HttpStatusCode.OK)
                 {
@@ -348,4 +413,6 @@ internal sealed class PackagedBodilessApplication : IAsyncDisposable
             {{errorOutputValue}}
             """;
     }
+
+    private sealed class AddressInUseException(string message, Exception innerException) : Exception(message, innerException);
 }
