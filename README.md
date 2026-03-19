@@ -70,11 +70,11 @@ Any malicious user can only remove responses for their own requests, but in the 
 - The current suite already covers header matching and the response compression ordering described above.
 
 ### Gaps for NuGet consumers
-- The repository does not currently pack Bodiless and install it into a sample application, so it does not verify the exact `.nupkg` that consumers restore.
+- The repository does not currently pack Bodiless into a local `.nupkg` and restore that package in a sample application, so it does not verify the exact artifact that consumers restore.
 - Consumer-visible response details still need explicit regression coverage, especially the parts users rely on when enabling Bodiless in front of existing endpoints.
 - The GitHub Actions workflow publishes the package without first proving that the packaged artifact can be restored and exercised from a clean consumer app.
 
 ### Planned follow-up work
-1. [#4](https://github.com/hansarnevartdal/bodiless/issues/4) Add a packed-package smoke test that restores Bodiless from a locally produced `.nupkg` in a sample ASP.NET Core app. This will catch packaging and public API regressions before release.
-2. [#5](https://github.com/hansarnevartdal/bodiless/issues/5) Expand regression coverage for the HTTP contract that consumers observe, including response headers, `Content-Length`, and header matching edge cases. This will protect the externally visible behavior that makes the middleware safe to adopt.
-3. [#6](https://github.com/hansarnevartdal/bodiless/issues/6) Update the CI and publishing workflow to pack Bodiless, run the consumer smoke test, and only then continue toward publication. This will make the release pipeline validate what is actually shipped to NuGet.
+1. #4 Add a packed-package smoke test that restores Bodiless from a locally produced `.nupkg` in a sample ASP.NET Core app. This will catch packaging and public API regressions before release.
+2. #5 Expand regression coverage for the HTTP contract that consumers observe, including response headers, `Content-Length`, and header matching edge cases. This will protect the externally visible behavior that makes the middleware safe to adopt.
+3. #6 Update the CI and publishing workflow to pack Bodiless, run the consumer smoke test, and only then continue toward publication. This will make the release pipeline validate what is actually shipped to NuGet.
