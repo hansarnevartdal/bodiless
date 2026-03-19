@@ -40,6 +40,7 @@ internal sealed class PackagedBodilessApplication : IAsyncDisposable
 {
     private const string ApplicationFileName = "SmokeTestApp.csproj";
     private const string PackageIdElementName = "PackageId";
+    private const string PrepackedPackagePathEnvironmentVariable = "BODILESS_NUPKG_PATH";
     private const int StartupAttemptCount = 5;
     private const string VersionElementName = "Version";
     private readonly Task<string> errorOutput;
@@ -82,6 +83,7 @@ internal sealed class PackagedBodilessApplication : IAsyncDisposable
     {
         var repositoryRoot = FindRepositoryRoot();
         var bodilessProjectPath = Path.Combine(repositoryRoot, "src", "Bodiless", "Bodiless.csproj");
+        var prepackedPackagePath = Environment.GetEnvironmentVariable(PrepackedPackagePathEnvironmentVariable);
         var workspaceDirectory = Path.Combine(Path.GetTempPath(), $"bodiless-smoke-{Guid.NewGuid():N}");
         var localFeedDirectory = Path.Combine(workspaceDirectory, "feed");
         var packagesDirectory = Path.Combine(workspaceDirectory, "packages");
@@ -105,15 +107,34 @@ internal sealed class PackagedBodilessApplication : IAsyncDisposable
                 ["NUGET_PACKAGES"] = packagesDirectory
             };
 
-            await RunDotnet(
-                repositoryRoot,
-                environmentVariables,
-                "pack",
-                bodilessProjectPath,
-                "--configuration",
-                "Release",
-                "--output",
-                localFeedDirectory);
+            if (string.IsNullOrWhiteSpace(prepackedPackagePath))
+            {
+                await RunDotnet(
+                    repositoryRoot,
+                    environmentVariables,
+                    "pack",
+                    bodilessProjectPath,
+                    "--configuration",
+                    "Release",
+                    "--output",
+                    localFeedDirectory);
+            }
+            else
+            {
+                var prepackedPackageFullPath = Path.GetFullPath(prepackedPackagePath);
+
+                if (!File.Exists(prepackedPackageFullPath))
+                {
+                    throw new FileNotFoundException(
+                        $"The prepacked Bodiless package specified by '{PrepackedPackagePathEnvironmentVariable}' was not found.",
+                        prepackedPackageFullPath);
+                }
+
+                File.Copy(
+                    prepackedPackageFullPath,
+                    Path.Combine(localFeedDirectory, Path.GetFileName(prepackedPackageFullPath)),
+                    overwrite: true);
+            }
 
             await File.WriteAllTextAsync(
                 Path.Combine(applicationDirectory, ApplicationFileName),
