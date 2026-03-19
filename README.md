@@ -62,3 +62,19 @@ The overhead of this middleware is hardly noticeable, and it can be very conveni
 I recommend defining your own custom header, making malicious use less likely.
 
 Any malicious user can only remove responses for their own requests, but in the same way that this lets you put a lot of load on your API from a single computer, it can let malicious users do the same. If you are worried this might happen you can either feature toggle the middleware, or simply add it temporarily while testing, and then remove it after use.
+
+## Testing roadmap
+### Current coverage
+- `tests/Bodiless.Tests` exercises the middleware through `Microsoft.AspNetCore.TestHost`.
+- The test project references `src/Bodiless` directly, which keeps feedback fast while developing inside this repository.
+- The current suite already covers header matching and the response compression ordering described above.
+
+### Gaps for NuGet consumers
+- The repository does not currently pack Bodiless into a local `.nupkg` and restore that package in a sample application, so it does not verify the exact artifact that consumers restore.
+- Consumer-visible response details still need explicit regression coverage, especially the parts users rely on when enabling Bodiless in front of existing endpoints.
+- The GitHub Actions workflow publishes the package without first proving that the packaged artifact can be restored and exercised from a clean consumer app.
+
+### Planned follow-up work
+1. #4 Add a packed-package smoke test that restores Bodiless from a locally produced `.nupkg` in a sample ASP.NET Core app. This will catch packaging and public API regressions before release.
+2. #5 Expand regression coverage for the HTTP contract that consumers observe, including response headers, `Content-Length`, and header matching edge cases. This will protect the externally visible behavior that makes the middleware safe to adopt.
+3. #6 Update the CI and publishing workflow to pack Bodiless, run the consumer smoke test, and only then continue toward publication. This will make the release pipeline validate what is actually shipped to NuGet.
